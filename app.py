@@ -15,6 +15,7 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import fitz  # PyMuPDF
 import pandas as pd
 import streamlit as st
 from rapidfuzz import process, fuzz
@@ -64,6 +65,63 @@ def normalize(text: str) -> str:
     text = _PUNCTUATION.sub(" ", text)
     text = _SPACES.sub(" ", text)
     return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Separación de PDF completo en cartas individuales
+# ---------------------------------------------------------------------------
+def split_pdf_by_cif(pdf_bytes: bytes, cif: str) -> dict:
+    """
+    Divide un PDF completo en PDFs individuales detectando el CIF como marcador
+    de inicio de carta. Devuelve un dict {nombre_cliente: bytes_pdf}.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    indices_inicio = [i for i in range(len(doc)) if cif in doc[i].get_text()]
+
+    if not indices_inicio:
+        doc.close()
+        return {}
+
+    pdf_dict = {}
+    total = len(indices_inicio)
+
+    for idx, start_page in enumerate(indices_inicio):
+        end_page = indices_inicio[idx + 1] - 1 if idx + 1 < total else len(doc) - 1
+
+        # Extraer nombre del cliente de la primera página de la carta
+        texto = doc[start_page].get_text()
+        lineas = [l.strip() for l in texto.split("\n") if l.strip()]
+        nombre_cliente = ""
+
+        for i, linea in enumerate(lineas):
+            # Patrón A: nombre tras "ejercicio" + "es de:"
+            if "ejercicio" in linea.lower() and "es de:" in linea.lower():
+                if i + 1 < len(lineas) and lineas[i + 1].lower() != "euros":
+                    nombre_cliente = lineas[i + 1]
+                    break
+            # Patrón B: nombre tras la línea con el CIF
+            if cif in linea and not nombre_cliente:
+                if i + 1 < len(lineas):
+                    candidato = lineas[i + 1]
+                    if "Muy Sr" not in candidato and "URANO" not in candidato:
+                        nombre_cliente = candidato
+                        break
+
+        if not nombre_cliente:
+            nombre_cliente = f"Cliente_{idx + 1:03d}"
+
+        # Limpiar nombre para usarlo como clave
+        nombre_limpio = re.sub(r'[\\/*?:"<>|]', "", nombre_cliente).strip()[:80]
+        if not nombre_limpio:
+            nombre_limpio = f"Cliente_{idx + 1:03d}"
+
+        nuevo_doc = fitz.open()
+        nuevo_doc.insert_pdf(doc, from_page=start_page, to_page=end_page)
+        pdf_dict[nombre_limpio] = nuevo_doc.tobytes()
+        nuevo_doc.close()
+
+    doc.close()
+    return pdf_dict
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +242,14 @@ with st.sidebar:
     app_password = st.text_input("App Password", type="password")
 
     st.divider()
+    st.header("📄 Separación de PDF")
+    cif_separator = st.text_input(
+        "CIF de cabecera (marcador de inicio de carta)",
+        value="B73798340",
+        help="El sistema detecta el inicio de cada carta buscando este texto en la página.",
+    )
+
+    st.divider()
     st.header("📧 Plantilla de Email")
 
     default_subject = "Modelo 347 - Declaración Anual de Operaciones con Terceras Personas"
@@ -227,7 +293,7 @@ st.header("1. Carga de Archivos")
 col_zip, col_xls = st.columns(2)
 
 with col_zip:
-    st.subheader("📁 Archivo ZIP con PDFs")
+    st.subheader("📁 ZIP con PDFs individuales")
     uploaded_zip = st.file_uploader(
         "Suba el ZIP que contiene los PDFs",
         type=["zip"],
@@ -242,32 +308,58 @@ with col_zip:
             st.session_state["_zip_file_id"] = _zip_id
 
     if uploaded_zip is not None:
-        # Verificar que sea realmente un ZIP válido
         try:
             with zipfile.ZipFile(io.BytesIO(uploaded_zip.read())) as zf:
                 pdf_dict = {}
                 skipped = []
                 for name in zf.namelist():
-                    # Solo PDFs en la raíz o subcarpetas
                     if name.lower().endswith(".pdf") and not name.startswith("__MACOSX"):
-                        # Usar solo el nombre de archivo sin ruta ni extensión
                         base = name.split("/")[-1]
-                        pdf_key = base[:-4]  # quitar .pdf
+                        pdf_key = base[:-4]
                         pdf_dict[pdf_key] = zf.read(name)
                     elif not name.endswith("/"):
                         skipped.append(name)
-
             st.session_state["pdf_files"] = pdf_dict
             st.session_state["matched_done"] = False
-            st.success(f"ZIP cargado correctamente: **{len(pdf_dict)} PDFs** encontrados.")
+            st.success(f"ZIP cargado: **{len(pdf_dict)} PDFs** encontrados.")
             if skipped:
                 st.info(f"Archivos ignorados (no son PDF): {', '.join(skipped[:10])}")
         except zipfile.BadZipFile:
             st.error(
                 "El archivo no es un ZIP válido. "
-                "Si tiene un archivo .RAR, debe convertirlo a formato .ZIP antes de subirlo. "
-                "Puede usar herramientas como 7-Zip o WinRAR para realizar la conversión."
+                "Si tiene un .RAR, conviértalo a .ZIP primero (7-Zip o WinRAR)."
             )
+
+    st.divider()
+    st.subheader("📄 PDF completo (todas las cartas juntas)")
+    uploaded_pdf = st.file_uploader(
+        "Suba el PDF con todas las cartas seguidas",
+        type=["pdf"],
+        help="El sistema detectará el inicio de cada carta por el CIF configurado en el panel lateral y las separará automáticamente.",
+    )
+
+    if uploaded_pdf is not None:
+        _pdf_id = (uploaded_pdf.name, uploaded_pdf.size)
+        if st.session_state.get("_pdf_file_id") == _pdf_id:
+            uploaded_pdf = None  # mismo archivo, no reprocesar
+        else:
+            st.session_state["_pdf_file_id"] = _pdf_id
+
+    if uploaded_pdf is not None:
+        with st.spinner("Separando cartas del PDF..."):
+            try:
+                pdf_dict = split_pdf_by_cif(uploaded_pdf.read(), cif_separator)
+                if not pdf_dict:
+                    st.error(
+                        f"No se encontró el marcador **{cif_separator}** en el PDF. "
+                        "Revise el CIF configurado en el panel lateral."
+                    )
+                else:
+                    st.session_state["pdf_files"] = pdf_dict
+                    st.session_state["matched_done"] = False
+                    st.success(f"PDF separado: **{len(pdf_dict)} cartas** detectadas.")
+            except Exception as exc:
+                st.error(f"Error al procesar el PDF: {exc}")
 
 with col_xls:
     st.subheader("📊 Excel con datos de clientes")
@@ -416,6 +508,16 @@ if st.session_state["matched_done"]:
                 f"❌ {name}.pdf</div>",
                 unsafe_allow_html=True,
             )
+        # Botón de descarga Excel con los no encontrados
+        df_unmatched = pd.DataFrame({"Archivo PDF sin emparejar": [f"{n}.pdf" for n in unmatched]})
+        excel_buf = io.BytesIO()
+        df_unmatched.to_excel(excel_buf, index=False, engine="openpyxl")
+        st.download_button(
+            label="⬇️ Descargar listado de no encontrados (.xlsx)",
+            data=excel_buf.getvalue(),
+            file_name="no_encontrados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     # ---------------------------------------------------------------------------
     # Sección 4 — Envío masivo
