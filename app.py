@@ -270,6 +270,13 @@ with col_xls:
     )
 
     if uploaded_excel is not None:
+        _file_id = (uploaded_excel.name, uploaded_excel.size)
+        if st.session_state.get("_excel_file_id") != _file_id:
+            st.session_state["_excel_file_id"] = _file_id
+        else:
+            uploaded_excel = None  # mismo archivo, no reprocesar
+
+    if uploaded_excel is not None:
         try:
             df = pd.read_excel(uploaded_excel, engine="openpyxl")
             # Normalizar nombres de columna: quitar espacios y homogeneizar
@@ -348,14 +355,14 @@ if st.session_state["matched_done"]:
         col_sel1, col_sel2 = st.columns([1, 5])
         with col_sel1:
             if st.button("✅ Seleccionar todos"):
-                for m in st.session_state["matches"]:
+                for i, m in enumerate(st.session_state["matches"]):
                     m["selected"] = True
-                st.rerun()
+                    st.session_state[f"sel_{i}"] = True
         with col_sel2:
             if st.button("⬜ Deseleccionar todos"):
-                for m in st.session_state["matches"]:
+                for i, m in enumerate(st.session_state["matches"]):
                     m["selected"] = False
-                st.rerun()
+                    st.session_state[f"sel_{i}"] = False
 
         st.subheader("✅ PDFs con coincidencia")
 
