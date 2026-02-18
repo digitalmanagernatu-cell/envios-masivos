@@ -272,6 +272,22 @@ with col_xls:
     if uploaded_excel is not None:
         try:
             df = pd.read_excel(uploaded_excel, engine="openpyxl")
+            # Normalizar nombres de columna: quitar espacios y homogeneizar
+            df.columns = df.columns.str.strip()
+            # Mapa de aliases para tolerar variantes comunes
+            _col_aliases = {
+                "nombre": "Nombre",
+                "email": "Email",
+                "correo": "Email",
+                "e-mail": "Email",
+                "direccion": "Dirección",
+                "dirección": "Dirección",
+                "direccion": "Dirección",
+            }
+            df.rename(
+                columns={c: _col_aliases[c.lower()] for c in df.columns if c.lower() in _col_aliases},
+                inplace=True,
+            )
             required_cols = {"Nombre", "Email", "Dirección"}
             missing = required_cols - set(df.columns)
             if missing:
