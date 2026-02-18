@@ -40,6 +40,7 @@ _STATE_DEFAULTS = {
     "sending": False,          # Flag de envío en curso
     "cancel_requested": False, # Flag de cancelación
     "matched_done": False,     # Matching ya ejecutado
+    "sel_gen": 0,              # Generación de checkboxes (cambia al seleccionar/deseleccionar todos)
 }
 for _k, _v in _STATE_DEFAULTS.items():
     if _k not in st.session_state:
@@ -362,14 +363,14 @@ if st.session_state["matched_done"]:
         col_sel1, col_sel2 = st.columns([1, 5])
         with col_sel1:
             if st.button("✅ Seleccionar todos"):
-                for i, m in enumerate(st.session_state["matches"]):
+                for m in st.session_state["matches"]:
                     m["selected"] = True
-                    st.session_state.pop(f"sel_{i}", None)
+                st.session_state["sel_gen"] += 1
         with col_sel2:
             if st.button("⬜ Deseleccionar todos"):
-                for i, m in enumerate(st.session_state["matches"]):
+                for m in st.session_state["matches"]:
                     m["selected"] = False
-                    st.session_state.pop(f"sel_{i}", None)
+                st.session_state["sel_gen"] += 1
 
         st.subheader("✅ PDFs con coincidencia")
 
@@ -393,10 +394,11 @@ if st.session_state["matched_done"]:
                 unsafe_allow_html=True,
             )
             cols[4].write(match["matched_by"])
+            _gen = st.session_state["sel_gen"]
             checked = cols[5].checkbox(
                 "",
                 value=match["selected"],
-                key=f"sel_{i}",
+                key=f"sel_{_gen}_{i}",
                 label_visibility="collapsed",
             )
             st.session_state["matches"][i]["selected"] = checked
