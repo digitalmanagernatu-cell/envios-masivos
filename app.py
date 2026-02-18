@@ -10,8 +10,7 @@ import smtplib
 import zipfile
 import datetime
 import traceback
-from email import encoders
-from email.mime.base import MIMEBase
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -117,7 +116,9 @@ def split_pdf_by_cif(pdf_bytes: bytes, cif: str) -> dict:
 
         nuevo_doc = fitz.open()
         nuevo_doc.insert_pdf(doc, from_page=start_page, to_page=end_page)
-        pdf_dict[nombre_limpio] = nuevo_doc.tobytes()
+        buf = io.BytesIO()
+        nuevo_doc.save(buf)
+        pdf_dict[nombre_limpio] = buf.getvalue()
         nuevo_doc.close()
 
     doc.close()
@@ -213,13 +214,12 @@ def send_email(
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     # Adjunto PDF
-    part = MIMEBase("application", "octet-stream")
-    part.set_payload(pdf_bytes)
-    encoders.encode_base64(part)
     safe_filename = f"{pdf_name}.pdf"
+    part = MIMEApplication(pdf_bytes, _subtype="pdf", Name=safe_filename)
     part.add_header(
         "Content-Disposition",
-        f'attachment; filename="{safe_filename}"',
+        "attachment",
+        filename=safe_filename,
     )
     msg.attach(part)
 
@@ -228,7 +228,7 @@ def send_email(
         server.starttls()
         server.ehlo()
         server.login(sender_email, app_password)
-        server.sendmail(sender_email, recipient_email, msg.as_string())
+        server.send_message(msg)
 
 
 # ---------------------------------------------------------------------------
