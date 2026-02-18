@@ -196,7 +196,7 @@ with st.sidebar:
         "ejercicio fiscal.\n\n"
         "Por favor, revise detenidamente la información contenida y no dude en "
         "ponerse en contacto con nosotros si tiene alguna consulta o discrepancia.\n\n"
-        "Atentamente,\nEl equipo de asesoría"
+        "Atentamente,\nNATU Laboratories"
     )
     email_body = st.text_area("Cuerpo del email", value=default_body, height=200)
 
