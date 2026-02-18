@@ -234,6 +234,13 @@ with col_zip:
     )
 
     if uploaded_zip is not None:
+        _zip_id = (uploaded_zip.name, uploaded_zip.size)
+        if st.session_state.get("_zip_file_id") == _zip_id:
+            uploaded_zip = None  # mismo archivo, no reprocesar
+        else:
+            st.session_state["_zip_file_id"] = _zip_id
+
+    if uploaded_zip is not None:
         # Verificar que sea realmente un ZIP válido
         try:
             with zipfile.ZipFile(io.BytesIO(uploaded_zip.read())) as zf:
@@ -357,12 +364,12 @@ if st.session_state["matched_done"]:
             if st.button("✅ Seleccionar todos"):
                 for i, m in enumerate(st.session_state["matches"]):
                     m["selected"] = True
-                    st.session_state[f"sel_{i}"] = True
+                    st.session_state.pop(f"sel_{i}", None)
         with col_sel2:
             if st.button("⬜ Deseleccionar todos"):
                 for i, m in enumerate(st.session_state["matches"]):
                     m["selected"] = False
-                    st.session_state[f"sel_{i}"] = False
+                    st.session_state.pop(f"sel_{i}", None)
 
         st.subheader("✅ PDFs con coincidencia")
 
