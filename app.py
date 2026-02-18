@@ -296,7 +296,7 @@ with col_xls:
                     "Por favor, revise el archivo."
                 )
             else:
-                df = df[["Nombre", "Email", "Dirección"]].dropna(subset=["Email"])
+                df = df[["Nombre", "Email", "Dirección"]].dropna(subset=["Email"]).reset_index(drop=True)
                 st.session_state["df_excel"] = df
                 st.session_state["matched_done"] = False
                 st.success(f"Excel cargado: **{len(df)} filas** válidas.")
