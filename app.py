@@ -10,6 +10,7 @@ import smtplib
 import zipfile
 import datetime
 import traceback
+import unicodedata
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -214,7 +215,16 @@ def send_email(
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     # Adjunto PDF
-    safe_filename = f"{pdf_name}.pdf"
+    # Normalizar nombre a ASCII puro: quita acentos (á→a, ñ→n…) y
+    # sustituye caracteres no seguros. Evita que Outlook muestre el
+    # adjunto como ATT00001.bin por no poder decodificar RFC 2231.
+    ascii_name = (
+        unicodedata.normalize("NFKD", pdf_name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    ascii_name = re.sub(r"[^\w\s\-]", "_", ascii_name).strip().rstrip("_") or "carta_347"
+    safe_filename = f"{ascii_name}.pdf"
     part = MIMEApplication(pdf_bytes, _subtype="pdf", Name=safe_filename)
     part.add_header(
         "Content-Disposition",
