@@ -3,6 +3,7 @@ Sistema de Envío de Cartas - Modelo 347
 Aplicación Streamlit para gestión y envío masivo de declaraciones informativas.
 """
 
+import html as _html
 import io
 import re
 import time
@@ -118,7 +119,7 @@ def split_pdf_by_cif(pdf_bytes: bytes, cif: str) -> dict:
         nuevo_doc = fitz.open()
         nuevo_doc.insert_pdf(doc, from_page=start_page, to_page=end_page)
         buf = io.BytesIO()
-        nuevo_doc.save(buf)
+        nuevo_doc.save(buf, garbage=4, deflate=True)
         pdf_dict[nombre_limpio] = buf.getvalue()
         nuevo_doc.close()
 
@@ -212,7 +213,14 @@ def send_email(
     msg["To"] = recipient_email
     msg["Subject"] = subject
 
-    msg.attach(MIMEText(body, "plain", "utf-8"))
+    # Cuerpo en HTML para evitar que Exchange Online (Office 365) convierta
+    # el email a formato TNEF, lo que provoca adjuntos ATT00001.bin en Outlook.
+    html_body = (
+        "<html><body><p style='font-family:sans-serif;white-space:pre-wrap;'>"
+        + _html.escape(body).replace("\n", "<br>")
+        + "</p></body></html>"
+    )
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     # Adjunto PDF
     # Normalizar nombre a ASCII puro: quita acentos (á→a, ñ→n…) y
